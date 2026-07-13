@@ -1,7 +1,7 @@
 @echo off
 cd /d "%~dp0"
 
-set MODEL=qwen3:4b
+set MODEL=qwen3:1.7b
 
 where ollama >nul 2>nul
 if errorlevel 1 (

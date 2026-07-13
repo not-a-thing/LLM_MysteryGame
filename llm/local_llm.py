@@ -13,7 +13,7 @@ def call_local_llm(prompt, timeout=180):
             "keep_alive": "30m",
             "options": {
                 "temperature": 0.1,
-                "num_predict": 250,
+                "num_predict": 500,
                 "num_ctx": 2048
             },
         },

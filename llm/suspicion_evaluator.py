@@ -54,149 +54,130 @@ def evaluate_player_message(game_state, player_message):
     prompt = f"""
     You are a hidden evaluator for a mystery chat game.
 
-    You must return one JSON object.
+    Return only one complete JSON object.
     Do not write anything before or after the JSON.
 
-    Story truth:
+    Story:
     Sarah was found unconscious in a classroom.
     Martha secretly pushed Sarah.
     The player does not know Martha is responsible.
+    Martha is pretending to be devastated.
 
-    Recent Martha conversation:
+    Recent chat:
     {recent_chat}
 
-    Latest player message:
+    Player message:
     {player_message}
 
-    Evaluate the latest player message.
+    Evaluate only the player message using the recent chat context.
 
-    Use this scoring:
+    Choose exactly one category:
+    - casual
+    - grief
+    - broad_sarah_question
+    - timeline_question
+    - contradiction
+    - martha_behavior
+    - direct_accusation
+    - repeated_question
 
-    investigation_progress_delta:
-    0 = casual, emotional, repeated, or unrelated
-    1 = broad question about Sarah or what happened
-    2 = asks about timeline, classroom, accident, contradiction, missing details, or Martha's behavior
-    3 = directly accuses Martha or corners her
+    Scoring rules:
 
-    martha_pressure_delta:
-    0 = no pressure
-    1 = mild pressure
-    2 = defensive pressure
-    3 = direct accusation
+    casual or grief:
+    investigation_progress_delta = 0
+    martha_pressure_delta = 0
+    should_unlock_unknown = false
 
-    Return JSON in exactly this structure:
+    broad_sarah_question:
+    investigation_progress_delta = 1
+    martha_pressure_delta = 0
+    should_unlock_unknown = true
 
+    timeline_question:
+    investigation_progress_delta = 2
+    martha_pressure_delta = 1
+    should_unlock_unknown = true
+
+    contradiction:
+    investigation_progress_delta = 2
+    martha_pressure_delta = 2
+    should_unlock_unknown = true
+
+    martha_behavior:
+    investigation_progress_delta = 2
+    martha_pressure_delta = 2
+    should_unlock_unknown = true
+
+    direct_accusation:
+    investigation_progress_delta = 3
+    martha_pressure_delta = 3
+    should_unlock_unknown = true
+
+    repeated_question:
+    investigation_progress_delta = 0
+    martha_pressure_delta = 1
+    should_unlock_unknown = false
+
+    Return JSON with these exact keys:
     {{
-    "investigation_progress_delta": 1,
-    "martha_pressure_delta": 0,
-    "repeated_question": false,
-    "should_unlock_unknown": true,
-    "category": "broad_sarah_question",
-    "reason": "The player asks what happened to Sarah."
+    "investigation_progress_delta": number,
+    "martha_pressure_delta": number,
+    "repeated_question": boolean,
+    "should_unlock_unknown": boolean,
+    "category": string,
+    "reason": string
     }}
     """
 
-#     prompt = f"""
-# Return only valid JSON.
-
-# You are a hidden evaluator for a mystery chat game.
-
-# Story truth:
-# Sarah was found unconscious in a university classroom.
-# Martha secretly pushed Sarah during an argument.
-# Sarah hit a desk or table.
-# Martha believes Sarah died.
-# Martha is pretending to be devastated.
-# The player does not know Martha is responsible.
-
-# Current chapter: {game_state.chapter}
-# Investigation progress: {game_state.investigation_progress}
-# Martha pressure: {game_state.martha_pressure}
-# Unknown unlocked: {game_state.unknown_unlocked}
-
-# Recent Martha conversation:
-# {recent_chat}
-
-# Latest player message:
-# {player_message}
-
-# Evaluate the latest player message based on meaning and recent context.
-
-# investigation_progress_delta:
-# 0 = casual, emotional, repeated, unrelated, or does not investigate
-# 1 = broad question about Sarah or what happened
-# 2 = asks about timeline, classroom, accident, contradiction, missing details, or Martha's behavior
-# 3 = directly accuses Martha, corners her, or exposes a major inconsistency
-
-# martha_pressure_delta:
-# 0 = no pressure
-# 1 = mild discomfort
-# 2 = defensive pressure
-# 3 = direct accusation or serious threat to Martha's cover
-
-# Rules:
-# If the player repeats the same question without adding new pressure, investigation_progress_delta should be 0.
-# If the player repeats a question but challenges Martha's avoidance, progress can be 1 and pressure can be higher.
-# Do not reveal or invent story events.
-
-# Return exactly this JSON object:
-# {{
-#   "investigation_progress_delta": 0,
-#   "martha_pressure_delta": 0,
-#   "repeated_question": false,
-#   "should_unlock_unknown": false,
-#   "category": "casual",
-#   "reason": "short private reason"
-# }}
-# """
-
     raw = call_local_llm(prompt)
+
     print("RAW EVALUATOR:")
     print(raw)
 
     result = extract_json(raw)
-    
-    if result == {}:
-        print("Qwen returned empty JSON.")
-        result = None
-        
-    if result is None:
+
+    if result is None or result == {}:
         return {
             "investigation_progress_delta": 0,
             "martha_pressure_delta": 0,
             "repeated_question": False,
             "should_unlock_unknown": False,
-            "category": "casual",
+            "category": "qwen_failed",
             "reason": "Evaluator failed to return valid JSON."
         }
 
-    result["investigation_progress_delta"] = clamp_int(
-        result.get("investigation_progress_delta", 0),
+    return {
+    "investigation_progress_delta": clamp_int(
+        result.get(
+            "investigation_progress_delta",
+            result.get("progress", 0),
+        ),
         0,
         3,
-    )
-
-    result["martha_pressure_delta"] = clamp_int(
-        result.get("martha_pressure_delta", 0),
+    ),
+    "martha_pressure_delta": clamp_int(
+        result.get(
+            "martha_pressure_delta",
+            result.get("pressure", 0),
+        ),
         0,
         3,
-    )
-
-    result["repeated_question"] = to_bool(
-        result.get("repeated_question", False)
-    )
-
-    result["should_unlock_unknown"] = to_bool(
-        result.get("should_unlock_unknown", False)
-    )
-
-    if "category" not in result:
-        result["category"] = "unknown"
-
-    if "reason" not in result:
-        result["reason"] = "No reason returned."
-
-    return result
+    ),
+    "repeated_question": to_bool(
+        result.get(
+            "repeated_question",
+            result.get("repeat", False),
+        ),
+    ),
+    "should_unlock_unknown": to_bool(
+        result.get(
+            "should_unlock_unknown",
+            result.get("unlock_unknown", False),
+        ),
+    ),
+    "category": result.get("category", "unknown"),
+    "reason": result.get("reason", "Qwen evaluator result."),
+}
 
 def to_bool(value):
     if isinstance(value,bool):
