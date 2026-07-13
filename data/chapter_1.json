@@ -1,0 +1,71 @@
+{
+    "chapter":1,
+    "title":"The First Messsage",
+    "checkpoint":{
+        "investigation_progress_required":5
+    },
+    "starting_messages":{
+        "Martha":[
+            {
+                "sender":"Martha",
+                "text":"Are you okay?"
+            },
+            {
+                "sender":"Martha",
+                "text":"I still cannnot believe Sarah is gone."
+            }
+        ],
+        "Unknown":[]
+    },
+    "chapter_start":{
+        "sender":"Unknown",
+        "messages":[
+            "Do not believe everything she says."
+        ],
+        "unlock_unknown":true,
+        "wait_until_player_question_martha":true
+    },
+    "unknown_choices":{
+        "choices":[
+            {
+                "id":"ask_identity_direct",
+                "text":"who are you?"
+            },
+            {
+                "id":"ask_identity_reason",
+                "text":"Why are you messaging me?"
+            }
+        ],
+        "responses":[
+            "Someone who knew Sarah.",
+            "I want to help.",
+            "Ask Martha what really happen that night."
+        ],
+        "after_response_status":"inactive"
+    },
+    "chapter_end":{
+        "messages":[
+            "You felt it too, didn't you?",
+            "There is something she is hiding!",
+            "You must find out what that is."
+        ],
+        "fade_to":"chapter_2"
+    },
+    "martha_control":{
+        "chapter_behavior":"In Chapter 1, Martha sounds devastated and fragile. If the player asks about Sarah's death, Martha responds emotionally but vaguely. If the player pressures her, she becomes defensive and makes the player feel guilty for asking.",
+        "allowed_reveals":[
+            "Martha can say she is shocked by Sarah's death.",
+            "Martha can say Sarah was important to her.",
+            "Martha can say she does not understand what happened.",
+            "Martha can avoid giving a clear timeline.",
+            "Marha can ask the player not to trust anonymous message."
+        ],
+        "blocked_reveals":[
+            "Martha must not admit she pushed Sarah.",
+            "Martha must not mention the desk or table impact as something she personally saw.",
+            "Martha must not know Sarah is alive.",
+            "Martha must not know the player stole Sarah's research.",
+            "Martha must not confess in Chapter 1"
+        ]
+    }
+}
