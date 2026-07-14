@@ -1,6 +1,64 @@
 import json
 import re
+
 from llm.local_llm import call_local_llm
+
+
+VALID_CATEGORIES = {
+    "casual",
+    "grief",
+    "broad_sarah_question",
+    "timeline_question",
+    "contradiction",
+    "martha_behavior",
+    "direct_accusation",
+    "unclear",
+}
+
+
+CATEGORY_RULES = {
+    "casual": {
+        "investigation_progress_delta": 0,
+        "martha_pressure_delta": 0,
+        "should_unlock_unknown": False,
+    },
+    "grief": {
+        "investigation_progress_delta": 0,
+        "martha_pressure_delta": 0,
+        "should_unlock_unknown": False,
+    },
+    "broad_sarah_question": {
+        "investigation_progress_delta": 1,
+        "martha_pressure_delta": 0,
+        "should_unlock_unknown": False,
+    },
+    "timeline_question": {
+        "investigation_progress_delta": 2,
+        "martha_pressure_delta": 1,
+        "should_unlock_unknown": True,
+    },
+    "contradiction": {
+        "investigation_progress_delta": 2,
+        "martha_pressure_delta": 2,
+        "should_unlock_unknown": True,
+    },
+    "martha_behavior": {
+        "investigation_progress_delta": 2,
+        "martha_pressure_delta": 2,
+        "should_unlock_unknown": True,
+    },
+    "direct_accusation": {
+        "investigation_progress_delta": 0,
+        "martha_pressure_delta": 3,
+        "should_unlock_unknown": False,
+    },
+    "unclear": {
+        "investigation_progress_delta": 0,
+        "martha_pressure_delta": 0,
+        "should_unlock_unknown": False,
+    },
+}
+
 
 def extract_json(raw_text):
     if raw_text is None:
@@ -8,6 +66,7 @@ def extract_json(raw_text):
 
     raw_text = raw_text.strip()
 
+    # Remove Qwen thinking sections.
     raw_text = re.sub(
         r"<think>.*?</think>",
         "",
@@ -33,16 +92,33 @@ def extract_json(raw_text):
 
     return None
 
-def get_recent_chat_context(game_state,contact_name,limit=10):
-    messages=game_state.messages.get(contact_name,[])
-    recent_messages=messages[-limit:]
-    lines=[]
-    
+
+def get_recent_chat_context(game_state, contact_name, limit=10):
+    messages = game_state.messages.get(contact_name, [])
+    recent_messages = messages[-limit:]
+    lines = []
+
     for message in recent_messages:
-        sender=message["sender"]
-        text=message["text"]
-        lines.append(f"{sender}:{text}")
+        sender = message.get("sender", "Unknown")
+        text = message.get("text", "")
+        lines.append(f"{sender}: {text}")
+
     return "\n".join(lines)
+
+
+def get_previous_player_messages(game_state, contact_name, limit=10):
+    messages = game_state.messages.get(contact_name, [])
+    player_messages = []
+
+    for message in messages:
+        sender = message.get("sender")
+        text = message.get("text", "")
+
+        if sender in {game_state.player_name, "Player"} and text:
+            player_messages.append(text)
+
+    return player_messages[-limit:]
+
 
 def evaluate_player_message(game_state, player_message):
     recent_chat = get_recent_chat_context(
@@ -50,142 +126,275 @@ def evaluate_player_message(game_state, player_message):
         "Martha",
         limit=6,
     )
-    
+
     prompt = f"""
-    You are a hidden evaluator for a mystery chat game.
+You are a message evaluator for a mystery chat game.
 
-    Return only one complete JSON object.
-    Do not write anything before or after the JSON.
+The player is chatting directly with Martha.
 
-    Story:
-    Sarah was found unconscious in a classroom.
-    Martha secretly pushed Sarah.
-    The player does not know Martha is responsible.
-    Martha is pretending to be devastated.
+Important:
+- In the player's message, "you" and "your" refer to Martha.
+- "Sarah", "she", and "her" refer to Sarah.
+- Evaluate only the latest player message.
+- Use the recent conversation only to understand context and repetition.
 
-    Recent chat:
-    {recent_chat}
+Choose one category:
 
-    Player message:
-    {player_message}
+casual:
+Greeting, small talk, or unrelated conversation.
 
-    Evaluate only the player message using the recent chat context.
+grief:
+Sadness, shock, sympathy, or concern without investigation.
 
-    Choose exactly one category:
-    - casual
-    - grief
-    - broad_sarah_question
-    - timeline_question
-    - contradiction
-    - martha_behavior
-    - direct_accusation
-    - repeated_question
+broad_sarah_question:
+A general question about Sarah's feelings, behavior, relationships,
+problems, or things she said.
 
-    Scoring rules:
+sarah_timeline:
+A question about Sarah's location, actions, or movements at a specific
+time.
 
-    casual or grief:
-    investigation_progress_delta = 0
-    martha_pressure_delta = 0
-    should_unlock_unknown = false
+martha_timeline:
+A question about Martha's location, actions, or movements at a specific
+time. Questions using "you" normally belong here when asking about
+location or actions.
 
-    broad_sarah_question:
-    investigation_progress_delta = 1
-    martha_pressure_delta = 0
-    should_unlock_unknown = true
+incident_timeline:
+A general question about the timing or sequence of the incident without
+focusing mainly on Sarah or Martha.
 
-    timeline_question:
-    investigation_progress_delta = 2
-    martha_pressure_delta = 1
-    should_unlock_unknown = true
+contradiction:
+The player points out a conflict between Martha's statements or between
+her statement and evidence.
 
-    contradiction:
-    investigation_progress_delta = 2
-    martha_pressure_delta = 2
-    should_unlock_unknown = true
+martha_behavior:
+The player questions Martha's honesty, nervousness, avoidance, or
+suspicious reactions.
 
-    martha_behavior:
-    investigation_progress_delta = 2
-    martha_pressure_delta = 2
-    should_unlock_unknown = true
+direct_accusation:
+The player directly accuses Martha of hurting Sarah or causing the
+incident.
 
-    direct_accusation:
-    investigation_progress_delta = 3
-    martha_pressure_delta = 3
-    should_unlock_unknown = true
+unclear:
+The message is too vague or cannot be reliably classified.
 
-    repeated_question:
-    investigation_progress_delta = 0
-    martha_pressure_delta = 1
-    should_unlock_unknown = false
+Examples:
 
-    Return JSON with these exact keys:
-    {{
-    "investigation_progress_delta": number,
-    "martha_pressure_delta": number,
-    "repeated_question": boolean,
-    "should_unlock_unknown": boolean,
-    "category": string,
-    "reason": string
-    }}
-    """
+Player: "Why did Sarah go to the classroom late at night?"
+Result:
+{{"category":"sarah_timeline","repeated_question":false,"reason":"The player asks about Sarah's action at a specific time."}}
+
+Player: "Where were you that night?"
+Result:
+{{"category":"martha_timeline","repeated_question":false,"reason":"The player asks about Martha's location that night."}}
+
+Player: "What happened that night?"
+Result:
+{{"category":"incident_timeline","repeated_question":false,"reason":"The player asks about the incident generally."}}
+
+Player: "Did Sarah seem upset?"
+Result:
+{{"category":"broad_sarah_question","repeated_question":false,"reason":"The player asks generally about Sarah's behavior."}}
+
+Player: "Why are you hiding something?"
+Result:
+{{"category":"martha_behavior","repeated_question":false,"reason":"The player questions Martha's honesty."}}
+
+Player: "You pushed Sarah, didn't you?"
+Result:
+{{"category":"direct_accusation","repeated_question":false,"reason":"The player directly accuses Martha of hurting Sarah."}}
+
+Repetition:
+Set repeated_question to true only when the player already asked for
+essentially the same information.
+
+These are repeated:
+- "Where were you that night?"
+- "Where exactly were you when Sarah was hurt?"
+
+These are not repeated:
+- "Why did Sarah go to the classroom?"
+- "Where were you that night?"
+
+The first asks about Sarah. The second asks about Martha.
+
+Recent conversation:
+{recent_chat if recent_chat else "No previous conversation."}
+
+Latest player message:
+{player_message}
+
+Return only one valid JSON object:
+
+{{
+  "category": "category name",
+  "repeated_question": false,
+  "reason": "One short explanation."
+}}
+""".strip()
 
     raw = call_local_llm(prompt)
 
     print("RAW EVALUATOR:")
-    print(raw)
+    print(repr(raw))
+
+    # Retry once with an even shorter prompt when Qwen returns nothing.
+    if raw is None or not raw.strip():
+        retry_prompt = f"""
+The player is chatting directly with Martha.
+
+Classify this message:
+"{player_message}"
+
+Important:
+- "you" means Martha.
+- Sarah means Sarah.
+
+Categories:
+casual, grief, broad_sarah_question, sarah_timeline,
+martha_timeline, incident_timeline, contradiction,
+martha_behavior, direct_accusation, unclear
+
+Examples:
+"Where were you that night?" = martha_timeline
+"Why did Sarah go there that night?" = sarah_timeline
+"What happened that night?" = incident_timeline
+
+Return only:
+{{"category":"category","repeated_question":false,"reason":"short reason"}}
+""".strip()
+
+        raw = call_local_llm(retry_prompt)
+
+        print("RAW RETRY:")
+        print(repr(raw))
 
     result = extract_json(raw)
 
-    if result is None or result == {}:
+    if not isinstance(result, dict) or not result:
         return {
             "investigation_progress_delta": 0,
             "martha_pressure_delta": 0,
             "repeated_question": False,
-            "should_unlock_unknown": False,
             "category": "qwen_failed",
-            "reason": "Evaluator failed to return valid JSON."
+            "reason": "Evaluator returned an empty or invalid response.",
         }
 
+    valid_categories = {
+        "casual",
+        "grief",
+        "broad_sarah_question",
+        "sarah_timeline",
+        "martha_timeline",
+        "incident_timeline",
+        "contradiction",
+        "martha_behavior",
+        "direct_accusation",
+        "unclear",
+    }
+
+    category = str(
+        result.get("category", "unclear")
+    ).strip().lower()
+
+    if category not in valid_categories:
+        category = "unclear"
+
+    repeated_question = to_bool(
+        result.get("repeated_question", False)
+    )
+
+    category_scores = {
+        "casual": {
+            "progress": 0,
+            "pressure": 0,
+        },
+        "grief": {
+            "progress": 0,
+            "pressure": 0,
+        },
+        "broad_sarah_question": {
+            "progress": 1,
+            "pressure": 0,
+        },
+        "sarah_timeline": {
+            "progress": 1,
+            "pressure": 0,
+        },
+        "martha_timeline": {
+            "progress": 2,
+            "pressure": 1,
+        },
+        "incident_timeline": {
+            "progress": 1,
+            "pressure": 0,
+        },
+        "contradiction": {
+            "progress": 2,
+            "pressure": 2,
+        },
+        "martha_behavior": {
+            "progress": 1,
+            "pressure": 2,
+        },
+        "direct_accusation": {
+            "progress": 0,
+            "pressure": 3,
+        },
+        "unclear": {
+            "progress": 0,
+            "pressure": 0,
+        },
+    }
+
+    scores = category_scores[category]
+
+    progress_delta = scores["progress"]
+    pressure_delta = scores["pressure"]
+
+    if repeated_question:
+        progress_delta = 0
+
+    reason = result.get(
+        "reason",
+        "Qwen evaluator result.",
+    )
+
+    if not isinstance(reason, str) or not reason.strip():
+        reason = "Qwen evaluator result."
+
     return {
-    "investigation_progress_delta": clamp_int(
-        result.get(
-            "investigation_progress_delta",
-            result.get("progress", 0),
-        ),
-        0,
-        3,
-    ),
-    "martha_pressure_delta": clamp_int(
-        result.get(
-            "martha_pressure_delta",
-            result.get("pressure", 0),
-        ),
-        0,
-        3,
-    ),
-    "repeated_question": to_bool(
-        result.get(
-            "repeated_question",
-            result.get("repeat", False),
-        ),
-    ),
-    "should_unlock_unknown": to_bool(
-        result.get(
-            "should_unlock_unknown",
-            result.get("unlock_unknown", False),
-        ),
-    ),
-    "category": result.get("category", "unknown"),
-    "reason": result.get("reason", "Qwen evaluator result."),
-}
+        "investigation_progress_delta": progress_delta,
+        "martha_pressure_delta": pressure_delta,
+        "repeated_question": repeated_question,
+        "category": category,
+        "reason": reason.strip(),
+    }
+
+def get_failed_result():
+    return {
+        "investigation_progress_delta": 0,
+        "martha_pressure_delta": 0,
+        "repeated_question": False,
+        "should_unlock_unknown": False,
+        "category": "qwen_failed",
+        "reason": "Evaluator failed to return valid JSON.",
+    }
+
 
 def to_bool(value):
-    if isinstance(value,bool):
+    if isinstance(value, bool):
         return value
-    if isinstance(value,str):
-        return value.lower()=="true"
-    
+
+    if isinstance(value, str):
+        return value.strip().lower() in {
+            "true",
+            "1",
+            "yes",
+        }
+
     return bool(value)
+
 
 def clamp_int(value, minimum, maximum):
     try:
