@@ -4,60 +4,62 @@ import re
 from llm.local_llm import call_local_llm
 
 
-VALID_CATEGORIES = {
-    "casual",
-    "grief",
-    "broad_sarah_question",
-    "timeline_question",
-    "contradiction",
-    "martha_behavior",
-    "direct_accusation",
-    "unclear",
-}
+# VALID_CATEGORIES = {
+#     "casual",
+#     "grief",
+#     "broad_sarah_question",
+#     "sarah_timeline",
+#     "martha_timeline",
+#     "incident_timeline",
+#     "contradiction",
+#     "martha_behavior",
+#     "direct_accusation",
+#     "unclear",
+# }
 
 
-CATEGORY_RULES = {
-    "casual": {
-        "investigation_progress_delta": 0,
-        "martha_pressure_delta": 0,
-        "should_unlock_unknown": False,
-    },
-    "grief": {
-        "investigation_progress_delta": 0,
-        "martha_pressure_delta": 0,
-        "should_unlock_unknown": False,
-    },
-    "broad_sarah_question": {
-        "investigation_progress_delta": 1,
-        "martha_pressure_delta": 0,
-        "should_unlock_unknown": False,
-    },
-    "timeline_question": {
-        "investigation_progress_delta": 2,
-        "martha_pressure_delta": 1,
-        "should_unlock_unknown": True,
-    },
-    "contradiction": {
-        "investigation_progress_delta": 2,
-        "martha_pressure_delta": 2,
-        "should_unlock_unknown": True,
-    },
-    "martha_behavior": {
-        "investigation_progress_delta": 2,
-        "martha_pressure_delta": 2,
-        "should_unlock_unknown": True,
-    },
-    "direct_accusation": {
-        "investigation_progress_delta": 0,
-        "martha_pressure_delta": 3,
-        "should_unlock_unknown": False,
-    },
-    "unclear": {
-        "investigation_progress_delta": 0,
-        "martha_pressure_delta": 0,
-        "should_unlock_unknown": False,
-    },
-}
+# CATEGORY_RULES = {
+#     "casual": {
+#         "investigation_progress_delta": 0,
+#         "martha_pressure_delta": 0,
+        
+#     },
+#     "grief": {
+#         "investigation_progress_delta": 0,
+#         "martha_pressure_delta": 0,
+        
+#     },
+#     "broad_sarah_question": {
+#         "investigation_progress_delta": 1,
+#         "martha_pressure_delta": 0,
+       
+#     },
+#     "timeline_question": {
+#         "investigation_progress_delta": 2,
+#         "martha_pressure_delta": 1,
+        
+#     },
+#     "contradiction": {
+#         "investigation_progress_delta": 2,
+#         "martha_pressure_delta": 2,
+
+#     },
+#     "martha_behavior": {
+#         "investigation_progress_delta": 2,
+#         "martha_pressure_delta": 2,
+#         "should_unlock_unknown": True,
+#     },
+#     "direct_accusation": {
+#         "investigation_progress_delta": 0,
+#         "martha_pressure_delta": 3,
+#         "should_unlock_unknown": False,
+#     },
+#     "unclear": {
+#         "investigation_progress_delta": 0,
+#         "martha_pressure_delta": 0,
+#         "should_unlock_unknown": False,
+#     },
+# }
 
 
 def extract_json(raw_text):
@@ -365,7 +367,6 @@ Return only:
 
     return {
         "investigation_progress_delta": progress_delta,
-        "martha_pressure_delta": pressure_delta,
         "repeated_question": repeated_question,
         "category": category,
         "reason": reason.strip(),

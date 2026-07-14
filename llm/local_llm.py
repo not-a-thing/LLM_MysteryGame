@@ -9,12 +9,13 @@ def call_local_llm(prompt, timeout=180):
         json={
             "model": MODEL_NAME,
             "prompt": prompt,
+            "think":False,
             "stream": False,
             "keep_alive": "30m",
             "options": {
                 "temperature": 0.1,
                 "num_predict": 500,
-                "num_ctx": 2048
+                "num_ctx": 4096
             },
         },
         timeout=timeout,

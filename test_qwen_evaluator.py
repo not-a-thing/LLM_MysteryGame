@@ -46,9 +46,9 @@ def update_game_state(game_state, evaluation):
         "investigation_progress_delta"
     ]
 
-    game_state.martha_pressure += evaluation[
-        "martha_pressure_delta"
-    ]
+    # game_state.martha_pressure += evaluation[
+    #     "martha_pressure_delta"
+    # ]
 
 
 def print_evaluation(result):
@@ -58,10 +58,10 @@ def print_evaluation(result):
         "Investigation progress delta:",
         result["investigation_progress_delta"]
     )
-    print(
-        "Martha pressure delta:",
-        result["martha_pressure_delta"]
-    )
+    # print(
+    #     "Martha pressure delta:",
+    #     result["martha_pressure_delta"]
+    # )
     print(
         "Repeated question:",
         result["repeated_question"]

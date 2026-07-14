@@ -32,6 +32,7 @@ from story_engine import (
     open_conversation,
     handle_player_message_to_martha,
     update_queued_message,
+    update_llm_tasks,
 )
 
 from ui.notification import (
@@ -133,6 +134,7 @@ def main():
 
         # Update every frame
         update_chapter_transition(game_state)
+        update_llm_tasks(game_state)
         update_queued_message(game_state)
 
         if game_state.current_screen == "intro":

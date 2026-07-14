@@ -35,11 +35,17 @@ class GameState:
         self.typing_contact=None
         self.typing_started_at=0
         self.typing_duration=0
-        self.queued_message=[]
+        self.queued_messages=[]
         
-        self.llm_waiting=False
-        self.llm_result=None
-        self.llm_thread=None
+        self.martha_waiting=False
+        self.martha_result=None
+        self.martha_thread=None
+
+        self.evaluator_waiting=False
+        self.evaluator_result=None
+        self.evaluator_thread=None
+
+        self.last_evaluation=None
         
         self.messages={
             "Martha":[],

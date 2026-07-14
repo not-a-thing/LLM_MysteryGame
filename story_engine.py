@@ -1,10 +1,13 @@
 import pygame
 import threading
 
+from copy import deepcopy
+
 from helpers.text_helper import split_into_chat_bubbles
 from ui.notification import show_notification
 
 from llm.suspicion_evaluator import evaluate_player_message
+from llm.martha_llm import generate_martha_response
 
 def receive_message(game_state,sender,text):
     message={
@@ -12,7 +15,7 @@ def receive_message(game_state,sender,text):
         "text":text,
     }
     
-    game_state.message[sender].append(message)
+    game_state.messages[sender].append(message)
     player_is_viewing_sender={
         game_state.current_screen=="chat"
         and game_state.active_chat==sender
@@ -69,18 +72,6 @@ def open_conversation(game_state,contact_name):
     game_state.current_screen="chat"
     game_state.unread_counts[contact_name]=0
     
-def unlock_unknown_intro(game_state):
-    if game_state.unknown_unlocked:
-        return
-    
-    unknown_data=game_state.chapter_data["unknown_unlock"]
-    game_state.unknown_unlocked=True
-    game_state.unknown_is_active=True
-    
-    queue_contact_messages(game_state,"Unknown",unknown_data["messsages"],typing_duration=900)
-    
-    game_state.pending_choices=unknown_data["choices"]
-
 def handle_unknown_choice(game_state,choice_id):
     unknown_data=game_state.chapter_data["unknown_unlock"]
     selected_choice=None
@@ -93,7 +84,7 @@ def handle_unknown_choice(game_state,choice_id):
         return
     
     #Add the player's selected message
-    game_state.message["Unknown"].append(
+    game_state.messages["Unknown"].append(
         {
             "sender":game_state.player_name,
             "text":selected_choice["text"],
@@ -113,62 +104,153 @@ def handle_unknown_choice(game_state,choice_id):
     
     game_state.set_contact_active("Unknown",False)
 
-def handle_player_message_to_martha(game_state,player_message):
+def run_martha_llm(game_state_snapshot, game_state):
+    try:
+        result = generate_martha_response(
+            game_state_snapshot
+        )
+
+    except Exception as error:
+        print("Martha LLM failed:", error)
+        result = (
+            "Sorry... I can't think clearly right now."
+        )
+
+    game_state.martha_result = result
+    game_state.martha_waiting = False
+
+
+def run_evaluator(
+    evaluator_snapshot,
+    player_message,
+    game_state,
+):
+    try:
+        result = evaluate_player_message(
+            evaluator_snapshot,
+            player_message,
+        )
+
+    except Exception as error:
+        print("Evaluator failed:", error)
+
+        result = {
+            "investigation_progress_delta": 0,
+            "repeated_question": False,
+            "category": "qwen_failed",
+            "reason": str(error),
+        }
+
+    game_state.evaluator_result = result
+    game_state.evaluator_waiting = False
+def handle_player_message_to_martha(
+    game_state,
+    player_message,
+):
+    player_message = player_message.strip()
+
+    if not player_message:
+        return
+
+    # Prevent another message while Martha is generating.
+    if game_state.martha_waiting:
+        print("Martha is still generating a response.")
+        return
+
+    # Take evaluator snapshot BEFORE storing the newest message.
+    # This prevents it from treating the current message as repeated.
+    evaluator_snapshot = deepcopy(game_state)
+
+    # Store the player message in the real conversation.
     game_state.messages["Martha"].append(
         {
-            "sender":game_state.player_name,
-            "text":player_message
+            "sender": game_state.player_name,
+            "text": player_message,
         }
     )
-    evaluation=evaluate_player_message(
-        game_state,
-        player_message,
+
+    # Martha's snapshot includes the newest player message.
+    martha_snapshot = deepcopy(game_state)
+
+    game_state.martha_waiting = True
+    game_state.martha_result = None
+
+    game_state.evaluator_waiting = True
+    game_state.evaluator_result = None
+
+    game_state.martha_thread = threading.Thread(
+        target=run_martha_llm,
+        args=(
+            martha_snapshot,
+            game_state,
+        ),
+        daemon=True,
     )
-    print("EVALUATION: ", evaluation)
-    apply_evaluation(game_state,evaluation,)
-    
-    #Temporary Martha response
-    #Later replace with Martha LLM
-    martha_reply=get_temporary_martha_reply(
-        game_state,
-        evaluation,
+
+    game_state.evaluator_thread = threading.Thread(
+        target=run_evaluator,
+        args=(
+            evaluator_snapshot,
+            player_message,
+            game_state,
+        ),
+        daemon=True,
     )
-    queue_contact_messages(
-        game_state,
-        "Martha",
-        martha_reply,
-        typing_duration=1200,
-    )
+
+    game_state.martha_thread.start()
+    game_state.evaluator_thread.start()
 
 def apply_evaluation(game_state, evaluation):
     if game_state.chapter_transition_active:
         return
-    
-    progress_delta=evaluation.get(
+
+    if evaluation.get("category") == "qwen_failed":
+        return
+
+    progress_delta = evaluation.get(
         "investigation_progress_delta",
         0,
     )
-    pressure_delta=evaluation.get(
-        "martha_pressure_delta",
-        0,
-    ) 
-    
-    if evaluation.get("repeated_question", False):
-        # Repetition can still pressure Martha,
-        # but it should not farm investigation progress.
-        progress_delta = min(progress_delta, 1) 
-    
-    game_state.investigation_progress += progress_delta
-    game_state.martha_pressure += pressure_delta 
-    
-    print("Progress +", progress_delta, "=>", game_state.investigation_progress)
-    print("Martha pressure +", pressure_delta, "=>", game_state.martha_pressure)
-    
-    if (evaluation.get("should_unlock_unknown", False)
-        and not game_state.unknown_unlocked):
-        unlock_unknown_intro(game_state)
-    
+
+    if evaluation.get(
+        "repeated_question",
+        False,
+    ):
+        progress_delta = 0
+
+    game_state.investigation_progress += (
+        progress_delta
+    )
+
+    print(
+        "Progress +",
+        progress_delta,
+        "=>",
+        game_state.investigation_progress,
+    )
+
+    # Anonymous appears as a scripted story event,
+    # not as an evaluator result.
+    maybe_unlock_unknown_intro(game_state)
+
     check_chapter_checkpoint(game_state)
+
+def maybe_unlock_unknown_intro(game_state):
+    if game_state.unknown_unlocked:
+        return
+
+    # Temporary Chapter 1 trigger:
+    # Anonymous appears once the player has started
+    # speaking with Martha.
+    player_messages = [
+        message
+        for message in game_state.messages["Martha"]
+        if message.get("sender")
+        == game_state.player_name
+    ]
+
+    if len(player_messages) >= 2:
+        unlock_unknown_intro(game_state)
 
 def check_chapter_checkpoint(game_state):
     if game_state.chapter_checkpoint_reached:
@@ -200,15 +282,37 @@ def unlock_unknown_intro(game_state):
     if unknown_choices is not None:
         game_state.pending_choices=unknown_choices["choices"]
     
-# def apply_suspicion_points(game_state,amount):
-#     if game_state.chapter_transition_active:
-#         return
-#     game_state.suspicion_points+=amount
-#     print("Suspicion: ",game_state.suspicion_points)
-#     checkpoint=game_state.chapter_data["checkpoint_suspicion"]
-    
-#     if (game_state.suspicion_points>=checkpoint and not game_state.chapter_checkpoint_reached):
-#         trigger_chapter_ending(game_state)
+def update_llm_tasks(game_state):
+    if (
+        not game_state.martha_waiting
+        and game_state.martha_result is not None
+    ):
+        martha_reply = game_state.martha_result
+        game_state.martha_result = None
+        game_state.martha_thread = None
+
+        queue_contact_messages(
+            game_state,
+            "Martha",
+            martha_reply,
+            typing_duration=1200,
+        )
+
+    if (
+        not game_state.evaluator_waiting
+        and game_state.evaluator_result is not None
+    ):
+        evaluation = game_state.evaluator_result
+        game_state.evaluator_result = None
+        game_state.evaluator_thread = None
+        game_state.last_evaluation = evaluation
+
+        print("EVALUATION:", evaluation)
+
+        apply_evaluation(
+            game_state,
+            evaluation,
+        )
 
 def trigger_chapter_ending(game_state):
     if game_state.chapter_checkpoint_reached:
@@ -229,22 +333,3 @@ def trigger_chapter_ending(game_state):
     game_state.pending_chapter_fade = True
     game_state.chapter_transition_target = ending_data["fade_to"]
     
-def get_temporary_martha_reply(game_state, evaluation):
-    pressure = game_state.martha_pressure
-
-    if pressure >= 6:
-        return (
-            "Why are you questioning me like this? "
-            "I cared about Sarah too. You know that."
-        )
-
-    if pressure >= 3:
-        return (
-            "I do not know what you want me to say. "
-            "Everything about this still feels unreal."
-        )
-
-    return (
-        "I still cannot believe this happened. "
-        "Sarah was just here, and now everyone is talking about her like she is gone."
-    )
