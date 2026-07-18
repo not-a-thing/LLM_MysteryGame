@@ -1,65 +1,8 @@
 import json
 import re
 
-from llm.local_llm import call_local_llm
-
-
-# VALID_CATEGORIES = {
-#     "casual",
-#     "grief",
-#     "broad_sarah_question",
-#     "sarah_timeline",
-#     "martha_timeline",
-#     "incident_timeline",
-#     "contradiction",
-#     "martha_behavior",
-#     "direct_accusation",
-#     "unclear",
-# }
-
-
-# CATEGORY_RULES = {
-#     "casual": {
-#         "investigation_progress_delta": 0,
-#         "martha_pressure_delta": 0,
-        
-#     },
-#     "grief": {
-#         "investigation_progress_delta": 0,
-#         "martha_pressure_delta": 0,
-        
-#     },
-#     "broad_sarah_question": {
-#         "investigation_progress_delta": 1,
-#         "martha_pressure_delta": 0,
-       
-#     },
-#     "timeline_question": {
-#         "investigation_progress_delta": 2,
-#         "martha_pressure_delta": 1,
-        
-#     },
-#     "contradiction": {
-#         "investigation_progress_delta": 2,
-#         "martha_pressure_delta": 2,
-
-#     },
-#     "martha_behavior": {
-#         "investigation_progress_delta": 2,
-#         "martha_pressure_delta": 2,
-#         "should_unlock_unknown": True,
-#     },
-#     "direct_accusation": {
-#         "investigation_progress_delta": 0,
-#         "martha_pressure_delta": 3,
-#         "should_unlock_unknown": False,
-#     },
-#     "unclear": {
-#         "investigation_progress_delta": 0,
-#         "martha_pressure_delta": 0,
-#         "should_unlock_unknown": False,
-#     },
-# }
+from llm.local_llm import (call_local_llm,
+                           EVALUATOR_MODEL)
 
 
 def extract_json(raw_text):
@@ -235,7 +178,12 @@ Return only one valid JSON object:
 }}
 """.strip()
 
-    raw = call_local_llm(prompt)
+    raw = call_local_llm(prompt,
+                         model=EVALUATOR_MODEL,
+                         temperature=0,
+                         num_predict=120,
+                         num_ctx=4096,
+                         repeat_penalty=1.0,)
 
     print("RAW EVALUATOR:")
     print(repr(raw))

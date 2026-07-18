@@ -1,54 +1,73 @@
 import requests
 
 OLLAMA_URL="http://localhost:11434/api/generate"
-MODEL_NAME="qwen3:1.7b"
+EVALUATOR_MODEL="qwen3:1.7b"
+MARTHA_MODEL="qwen3:4b"
 
-def call_local_llm(prompt, timeout=180):
+def call_local_llm(
+    prompt,
+    model,
+    timeout=180,
+    temperature=0.1,
+    num_predict=300,
+    num_ctx=4096,
+    repeat_penalty=1.1,
+):
     response = requests.post(
         OLLAMA_URL,
         json={
-            "model": MODEL_NAME,
+            "model": model,
             "prompt": prompt,
-            "think":False,
             "stream": False,
+            "think": False,
             "keep_alive": "30m",
             "options": {
-                "temperature": 0.1,
-                "num_predict": 500,
-                "num_ctx": 4096
+                "temperature": temperature,
+                "num_predict": num_predict,
+                "num_ctx": num_ctx,
+                "repeat_penalty":repeat_penalty,
+                "repeat_last_n":128,
+                "top_p":0.9,
             },
         },
         timeout=timeout,
     )
 
     response.raise_for_status()
-    data = response.json()
 
-    # print("FULL OLLAMA DATA:")
-    # print(data)
+    data = response.json()
 
     return data.get("response", "")
 
-def warm_up_local_llm():
-    print("Warming up local LLM...")
+def warm_up_model(model_name):
+    print(f"Warming up {model_name}...")
+
     try:
-        response=requests.post(
+        response = requests.post(
             OLLAMA_URL,
             json={
-                "model":MODEL_NAME,
-                "prompt":"/no_think\nReply with only: ready",
-                "stream":False,
-                "keep_alive":"30m",
-                "options":{
-                    "temperature":0,
-                    "num_predict":10,
+                "model": model_name,
+                "prompt": "Reply only with: ready",
+                "stream": False,
+                "think": False,
+                "keep_alive": "30m",
+                "options": {
+                    "temperature": 0,
+                    "num_predict": 10,
                 },
             },
             timeout=180,
         )
+
         response.raise_for_status()
-        print("Local LLM is ready.")
+        print(f"{model_name} is ready.")
+
     except Exception as error:
-        print("Could not warm up local LLM: ")
-        print(error)
+        print(
+            f"Could not warm up {model_name}:",
+            error,
+        )
         
+def warm_up_local_llms():
+    warm_up_model(EVALUATOR_MODEL)
+    warm_up_model(MARTHA_MODEL)        
