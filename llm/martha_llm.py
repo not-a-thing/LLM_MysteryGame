@@ -112,7 +112,6 @@ def generate_martha_response(game_state):
 
 
     prompt = f"""
-/no_think
 
 You are Martha in a mystery chat game.
 

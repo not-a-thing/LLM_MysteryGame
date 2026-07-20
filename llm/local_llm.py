@@ -2,21 +2,27 @@ import requests
 
 OLLAMA_URL="http://localhost:11434/api/generate"
 EVALUATOR_MODEL="qwen3:1.7b"
-MARTHA_MODEL="qwen3:4b"
+MARTHA_MODEL="llama3.2:3b"
 
 def call_local_llm(
     prompt,
     model,
     timeout=180,
-    temperature=0.1,
-    num_predict=300,
+    temperature=0.3,
+    num_predict=160,
     num_ctx=4096,
-    repeat_penalty=1.1,
+    repeat_penalty=1.15,
 ):
     response = requests.post(
         OLLAMA_URL,
         json={
             "model": model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": prompt,
+                }
+            ],
             "prompt": prompt,
             "stream": False,
             "think": False,
@@ -34,10 +40,11 @@ def call_local_llm(
     )
 
     response.raise_for_status()
-
     data = response.json()
 
-    return data.get("response", "")
+    message = data.get("message", {})
+
+    return message.get("content", "").strip()
 
 def warm_up_model(model_name):
     print(f"Warming up {model_name}...")
